@@ -6,7 +6,7 @@ This is an example [Sandstorm](https://sandstorm.io) application which uses the 
 
 You might want to write a Sandstorm app using the raw API if:
 
-* You want to be as efficient as possible. Raw API apps -- especially if written in C++ or Rust -- take drastically less RAM and start much faster.
+* You want to be as efficient as possible. Raw API apps -- especially if written in C++ or Rust -- take drastically less RAM, start much faster, and produce much smaller distributable packages.
 * You want to avoid legacy cruft. A traditional HTTP server is a huge, complicated piece of code much of which is not important for Sandstorm.
 * You want to use a language that has poor HTTP support, but good Cap'n Proto RPC support, such as C++ or Rust.
 
@@ -27,6 +27,8 @@ That said, you should prefer `sandstorm-http-bridge` around a traditional HTTP s
 7. Open your local Sandstorm. The app should be visible there.
 8. Ctrl+C in the terminal running `make dev` to disconnect.
 
+_Note: You can ignore the bogus warning about `getaddrinfo` and static linking -- the app will never actually call `getaddrinfo`. We statically link the binary so that there's no need to include shared libs in the package, making it smaller and simpler._
+
 ## Building your own
 
 You can use this code as a starting point for your own app.
@@ -36,6 +38,12 @@ You can use this code as a starting point for your own app.
 3. Have your client code use HTTP GET, PUT, and DELETE requests to store user data under the HTTP path `/var`. You can create files under `/var` with any name, but you cannot create sub-directories (for now).
 4. Use `make dev` to test.
 5. Type just `make` to build a distributable package `package.spk`.
+
+Note that `server.c++` has some "features" that you may feel inclined to modify:
+
+* Only the owner of an app instance is allowed to write (i.e. issue PUT or DELETE requests under `/var`). Anyone can read (though they must of course first receive the secret URL from the owner). For many apps, it's more appropriate for everyone to have write access (again, provided they've received the URL). Search for `canWrite` in the code, and `getViewInfo`.
+* `Content-Type` headers are derived from file extensions, with only a small number of types supported. `index.html` is the default file for a directory. You can probably do better.
+* Various useful Sandstorm API features are not exposed. You could implement an HTTP API to get access to those features from your client app.
 
 ## Questions?
 
