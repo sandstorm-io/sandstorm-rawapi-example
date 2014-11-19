@@ -31,9 +31,6 @@
 #include <capnp/rpc-twoparty.h>
 #include <capnp/serialize.h>
 #include <unistd.h>
-#include <map>
-#include <unordered_map>
-#include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -41,9 +38,6 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <errno.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <algorithm>
 
 #include <sandstorm/grain.capnp.h>
 #include <sandstorm/web-session.capnp.h>
@@ -75,6 +69,13 @@ kj::AutoCloseFd createFile(kj::StringPtr name, int flags, mode_t mode = 0666) {
   int fd;
   KJ_SYSCALL(fd = open(name.cStr(), O_CREAT | flags, mode), name);
   return kj::AutoCloseFd(fd);
+}
+
+size_t getFileSize(int fd, kj::StringPtr filename) {
+  struct stat stats;
+  KJ_SYSCALL(fstat(fd, &stats));
+  KJ_REQUIRE(S_ISREG(stats.st_mode), "Not a regular file.", filename);
+  return stats.st_size;
 }
 
 kj::Maybe<kj::AutoCloseFd> tryOpen(kj::StringPtr name, int flags, mode_t mode = 0666) {
@@ -142,156 +143,6 @@ kj::Vector<kj::String> listDirectory(kj::StringPtr dirname) {
 
 // =======================================================================================
 // WebSession implementation (interface declared in sandstorm/web-session.capnp)
-
-class UnauthorizedRequestStream final: public sandstorm::WebSession::RequestStream::Server {
-  // A WebSession::RequestStream that always reports unauthorized.
-
-public:
-  // Ignore all input.
-  kj::Promise<void> write(WriteContext context) override { return kj::READY_NOW; }
-  kj::Promise<void> done(DoneContext context) override { return kj::READY_NOW; }
-  kj::Promise<void> expectSize(ExpectSizeContext context) override { return kj::READY_NOW; }
-
-  kj::Promise<void> getResponse(GetResponseContext context) override {
-    // Immediately return error.
-    context.getResults().initClientError()
-        .setStatusCode(sandstorm::WebSession::Response::ClientErrorCode::FORBIDDEN);
-    return kj::READY_NOW;
-  }
-};
-
-class PutStreamImpl final: public sandstorm::WebSession::RequestStream::Server {
-  // A WebSession::RequestStream that accepts a PUT request and writes it to disk.
-
-public:
-  PutStreamImpl(kj::AutoCloseFd fd, kj::String targetPath, kj::String tempPath)
-      : fd(kj::mv(fd)), targetPath(kj::mv(targetPath)), tempPath(kj::mv(tempPath)),
-        donePromiseAndFulfiller(kj::newPromiseAndFulfiller<void>()) {}
-
-  kj::Promise<void> write(WriteContext context) override {
-    KJ_REQUIRE(!isDone, "aleady called done()");
-
-    sendExceptionsToGetResponse([&]() {
-      kj::ArrayPtr<const byte> data = context.getParams().getData();
-
-      // Write the data to disk.
-      for (;;) {
-        ssize_t n;
-        KJ_SYSCALL(n = ::write(fd, data.begin(), data.size()));
-        if (n == data.size()) {
-          // All done.
-          return;
-        }
-        data = data.slice(n, data.size());
-      }
-    });
-
-    return kj::READY_NOW;
-  }
-
-  kj::Promise<void> done(DoneContext context) override {
-    KJ_REQUIRE(!isDone, "aleady called done()");
-
-    sendExceptionsToGetResponse([&]() {
-      KJ_SYSCALL(rename(tempPath.cStr(), targetPath.cStr()));
-      donePromiseAndFulfiller.fulfiller->fulfill();
-    });
-
-    return kj::READY_NOW;
-  }
-
-  kj::Promise<void> expectSize(ExpectSizeContext context) override {
-    // Ignore; don't care.
-    return kj::READY_NOW;
-  }
-
-  kj::Promise<void> getResponse(GetResponseContext context) override {
-    context.releaseParams();
-    context.getResults().initNoContent();
-
-    // Wait for done() to be called or an error to occur, then return.
-    return kj::mv(donePromiseAndFulfiller.promise);
-  }
-
-private:
-  kj::AutoCloseFd fd;
-  kj::String targetPath;
-  kj::String tempPath;
-  bool isDone = false;
-
-  kj::PromiseFulfillerPair<void> donePromiseAndFulfiller;
-
-  template <typename Func>
-  void sendExceptionsToGetResponse(Func&& func) {
-    // Try to run func(). If it throws an exception, cause getResponse() to fail with said
-    // exception.
-
-    KJ_IF_MAYBE(exception, kj::runCatchingExceptions(kj::fwd<Func>(func))) {
-      donePromiseAndFulfiller.fulfiller->reject(kj::mv(*exception));
-    }
-  }
-};
-
-class StreamWriter final: public sandstorm::Handle::Server {
-  // Object which reads data from a file on disk and writes it to a ByteStream. Used when streaming
-  // a response to a GET request.
-
-public:
-  StreamWriter(kj::AutoCloseFd fd, sandstorm::ByteStream::Client stream)
-      : fd(kj::mv(fd)), stream(kj::mv(stream)),
-        writeLoop(nextWrite().eagerlyEvaluate([this](kj::Exception&& e) {
-          // If we get here, the write loop failed. Alas, we have nowhere to report this failure.
-          // This is a limitation of HTTP: if you've started writing a response and then something
-          // fails, it's too late to go back and write an error response. All you can do is abort
-          // the connection so that the client doesn't wait forever. The WebSession equivalent of
-          // that is dropping the ByteStream, which we can do by overwriting it with null.
-          this->stream = nullptr;
-        })) {}
-
-private:
-  kj::AutoCloseFd fd;
-  sandstorm::ByteStream::Client stream;
-
-  kj::Promise<void> writeLoop;
-  // The promise
-
-  kj::Promise<void> nextWrite() {
-    auto request = stream.writeRequest();
-
-    // For maximum efficiency, we want to read directly into the request message. This means we
-    // need to allocate space in the message before we start reading. But it might turn out that
-    // we don't actually read as many bytes as we allocated. Normally Cap'n Proto doesn't allow
-    // "un-allocating" space in a message, but makes a special exception for a text or data blob:
-    // we can truncate the blob (and reclaim the space in the message) as long as we haven't
-    // allocated any new space after allocating the blob. To use this facility, we need to allocate
-    // the blob as an orphan.
-
-    auto dataOrphan = capnp::Orphanage::getForMessageContaining(
-          kj::implicitCast<sandstorm::ByteStream::WriteParams::Builder>(request))
-        .newOrphan<capnp::Data>(8192);
-    auto data = dataOrphan.get();
-
-    ssize_t n;
-    KJ_SYSCALL(n = ::read(fd, data.begin(), data.size()));
-
-    if (n == 0) {
-      // Oops, we're all done. Abandon that request and send a "done" request instead.
-      return stream.doneRequest().send().then([](auto response) {});
-    }
-
-    if (n < data.size()) {
-      // We read less than we requested, so truncate.
-      dataOrphan.truncate(n);
-    }
-
-    // OK, now we can adopt the orphan into the message.
-    request.adoptData(kj::mv(dataOrphan));
-
-    return request.send().then([this](auto response) {
-      return nextWrite();
-    });
-  }
-};
 
 class WebSessionImpl final: public sandstorm::WebSession::Server {
 public:
@@ -361,22 +212,30 @@ public:
     }
   }
 
-  kj::Promise<void> putStreaming(PutStreamingContext context) override {
+  kj::Promise<void> put(PutContext context) override {
     // HTTP PUT request.
 
-    auto path = context.getParams().getPath();
+    auto params = context.getParams();
+    auto path = params.getPath();
     requireCanonicalPath(path);
 
     KJ_REQUIRE(path.startsWith("var/"), "PUT only supported under /var.");
 
     if (!canWrite) {
-      context.getResults().setStream(kj::heap<UnauthorizedRequestStream>());
+      context.getResults().initClientError()
+          .setStatusCode(sandstorm::WebSession::Response::ClientErrorCode::FORBIDDEN);
     } else {
       auto tempPath = kj::str(path, ".uploading");
-      auto fd = createFile(tempPath, O_WRONLY | O_TRUNC);
-      context.getResults().setStream(
-          kj::heap<PutStreamImpl>(kj::mv(fd), kj::heapString(path), kj::mv(tempPath)));
+      auto data = params.getContent().getContent();
+      KJ_DBG(params.getContent());
+
+      kj::FdOutputStream(createFile(tempPath, O_WRONLY | O_TRUNC))
+          .write(data.begin(), data.size());
+
+      KJ_SYSCALL(rename(tempPath.cStr(), path.cStr()));
     }
+
+    context.getResults().initNoContent();
 
     return kj::READY_NOW;
   }
@@ -452,10 +311,13 @@ private:
   kj::Promise<void> readFile(
       kj::StringPtr filename, GetContext context, kj::StringPtr contentType) {
     KJ_IF_MAYBE(fd, tryOpen(filename, O_RDONLY)) {
-      auto response = context.getResults().initContent();
-      response.setMimeType(contentType);
-      response.getBody().setStream(kj::heap<StreamWriter>(
-          kj::mv(*fd), context.getParams().getContext().getResponseStream()));
+      auto size = getFileSize(*fd, filename);
+      kj::FdInputStream stream(kj::mv(*fd));
+      auto response = context.getResults(capnp::MessageSize { size / sizeof(capnp::word) + 32, 0 });
+      auto content = response.initContent();
+      content.setStatusCode(sandstorm::WebSession::Response::SuccessCode::OK);
+      content.setMimeType(contentType);
+      stream.read(content.getBody().initBytes(size).begin(), size);
       return kj::READY_NOW;
     } else {
       auto error = context.getResults().initClientError();
