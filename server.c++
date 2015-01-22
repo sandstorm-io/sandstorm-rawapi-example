@@ -227,7 +227,6 @@ public:
     } else {
       auto tempPath = kj::str(path, ".uploading");
       auto data = params.getContent().getContent();
-      KJ_DBG(params.getContent());
 
       kj::FdOutputStream(createFile(tempPath, O_WRONLY | O_TRUNC))
           .write(data.begin(), data.size());
