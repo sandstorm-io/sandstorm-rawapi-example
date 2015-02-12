@@ -392,8 +392,8 @@ public:
       capnp::MallocMessageBuilder message;
       auto vatId = message.getRoot<capnp::rpc::twoparty::VatId>();
       vatId.setSide(capnp::rpc::twoparty::Side::SERVER);
-      sandstorm::SandstormApi::Client api =
-          rpcSystem.bootstrap(vatId).castAs<sandstorm::SandstormApi>();
+      sandstorm::SandstormApi<>::Client api =
+          rpcSystem.bootstrap(vatId).castAs<sandstorm::SandstormApi<>>();
     }
 
     kj::NEVER_DONE.wait(ioContext.waitScope);
