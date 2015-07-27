@@ -23,7 +23,9 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
+    appTitle = (defaultText = "RawApiExample"),
     appVersion = 0,  # Increment this for every release.
+    appMarketingVersion = (defaultText = "0.0.0"),
 
     actions = [
       # Define your "new document" handlers here.
