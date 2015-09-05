@@ -385,9 +385,10 @@ public:
     capnp::TwoPartyVatNetwork network(*stream, capnp::rpc::twoparty::Side::CLIENT);
     auto rpcSystem = capnp::makeRpcServer(network, kj::heap<UiViewImpl>());
 
-    // Get the SandstormApi default capability from the supervisor.
-    // TODO(soon):  We don't use this, but for some reason the connection doesn't come up if we
-    //   don't do this restore.  Cap'n Proto bug?  v8capnp bug?  Shell bug?
+    // The `CLIENT` side of a `capnp::TwoPartyVatNetwork` does not serve its bootstrap capability
+    // until it has initiated a request for the bootstrap capability of the `SERVER` side.
+    // Therefore, we need to restore the supervisor's `SandstormApi` capability, even if we are not
+    // going to use it.
     {
       capnp::MallocMessageBuilder message;
       auto vatId = message.getRoot<capnp::rpc::twoparty::VatId>();
