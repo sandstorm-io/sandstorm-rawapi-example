@@ -23,13 +23,15 @@ const pkgdef :Spk.PackageDefinition = (
     # This manifest is included in your app package to tell Sandstorm
     # about your app.
 
-    appTitle = (defaultText = "RawApiExample"),
+    appTitle = (defaultText = "Raw API Example"),
+
     appVersion = 0,  # Increment this for every release.
     appMarketingVersion = (defaultText = "0.0.0"),
 
     actions = [
       # Define your "new document" handlers here.
-      ( title = (defaultText = "New RawApiExample Instance"),
+      ( title = (defaultText = "New Raw API Example Instance"),
+        nounPhrase = (defaultText = "instance"),
         command = .myCommand
         # The command to run when starting for the first time. (".myCommand"
         # is just a constant defined at the bottom of the file.)
