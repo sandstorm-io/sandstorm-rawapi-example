@@ -19,7 +19,7 @@ That said, you should prefer `sandstorm-http-bridge` around a traditional HTTP s
 ## Instructions
 
 1. Get a Linux machine.
-2. Install [Cap'n Proto](https://capnproto.org) 0.5.0 or newer. (As of this writing, 0.5.0 isn't out yet; install the latest code from git.)
+2. Install [Cap'n Proto](https://capnproto.org). You'll need to use the latest code from git, not a release version, because Sandstorm and Cap'n Proto are developed together and Sandstorm uses unreleased features from Cap'n Proto.
 3. Install [Sandstorm](https://github.com/sandstorm-io/sandstorm) and make sure it is successfully running locally.
 4. Clone this git repo.
 5. CD to the repo and `make dev`.
