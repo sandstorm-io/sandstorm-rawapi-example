@@ -19,15 +19,16 @@ That said, you should prefer `sandstorm-http-bridge` around a traditional HTTP s
 ## Instructions
 
 1. Get a Linux machine.
-2. Install the Clang C++ compiler version 3.4 or later.
-3. Install [Cap'n Proto](https://capnproto.org) 0.5.0 or newer. (As of this writing, 0.5.0 isn't out yet; install the latest code from git.)
-4. Install [Sandstorm](https://github.com/sandstorm-io/sandstorm) and make sure it is successfully running locally.
-5. Clone this git repo.
-6. CD to the repo and `make dev`.
-7. Open your local Sandstorm. The app should be visible there.
-8. Ctrl+C in the terminal running `make dev` to disconnect.
+2. Install [Cap'n Proto](https://capnproto.org) 0.5.0 or newer. (As of this writing, 0.5.0 isn't out yet; install the latest code from git.)
+3. Install [Sandstorm](https://github.com/sandstorm-io/sandstorm) and make sure it is successfully running locally.
+4. Clone this git repo.
+5. CD to the repo and `make dev`.
+6. Open your local Sandstorm. The app should be visible there.
+7. Ctrl+C in the terminal running `make dev` to disconnect.
 
 _Note: You can ignore the bogus warning about `getaddrinfo` and static linking -- the app will never actually call `getaddrinfo`. We statically link the binary so that there's no need to include shared libs in the package, making it smaller and simpler._
+
+_Note: Due to an ongoing disagreement between [GCC's](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=58074) and [Clang's](https://llvm.org/bugs/show_bug.cgi?id=23764) interpretations of the C++ ABI, it is important that you use the same compiler to compile this example program as you use to compile Cap'n Proto. By default both will use GCC. You can run `make CXX=clang++` to build with Clang instead._
 
 ## Building your own
 

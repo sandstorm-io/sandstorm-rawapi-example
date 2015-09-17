@@ -1,4 +1,4 @@
-CXX=clang++
+CXX=g++
 CXXFLAGS=-O2 -Wall
 CXXFLAGS2=-std=c++1y -Itmp $(CXXFLAGS)
 SANDSTORM_CAPNP_DIR=/opt/sandstorm/latest/usr/include
