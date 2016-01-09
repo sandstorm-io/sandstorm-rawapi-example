@@ -239,9 +239,8 @@ public:
           .write(data.begin(), data.size());
 
       KJ_SYSCALL(rename(tempPath.cStr(), path.cStr()));
+      context.getResults().initNoContent();
     }
-
-    context.getResults().initNoContent();
 
     return kj::READY_NOW;
   }
