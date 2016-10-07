@@ -50,12 +50,9 @@ const pkgdef :Spk.PackageDefinition = (
     searchPath = [
       ( packagePath = "server", sourcePath = "server" ),
       # Map server binary at "/server".
-      
+
       ( packagePath = "client", sourcePath = "client" ),
       # Map client directory at "/client".
-
-      ( sourcePath = "empty" )
-      # Make sure / is mapped to work around Sandstorm bug (temporary).
     ]
   ),
 
